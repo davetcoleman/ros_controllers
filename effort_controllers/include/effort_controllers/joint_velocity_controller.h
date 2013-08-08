@@ -60,6 +60,7 @@
 */
 
 #include <ros/node_handle.h>
+#include <urdf/model.h>
 #include <boost/thread/condition.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <hardware_interface/joint_command_interface.h>
@@ -141,11 +142,15 @@ public:
   std::string getJointName();
   
   hardware_interface::JointHandle joint_;
-  double command_;                                /**< Last commanded velocity. */
+  boost::shared_ptr<const urdf::Joint> joint_urdf_; // hold info about the joint from the URDF
+  double command_;                                // Last commanded velocity
 
 private:
   int loop_count_;
-  control_toolbox::Pid pid_controller_;           /**< Internal PID controller. */
+  control_toolbox::Pid pid_controller_;           // Internal PID controller
+
+  bool in_position_mode_; // true if the previous velocity command was zero
+  double position_mode_command_; // the joint position when the controller switched to position mode
 
   //friend class JointVelocityControllerNode; // what is this for??
 
@@ -159,7 +164,15 @@ private:
    * \brief Callback from /command subscriber for setpoint
    */
   void setCommandCB(const std_msgs::Float64ConstPtr& msg);
-};
+
+  /**
+   * \brief Check that the command is within the hard limits of the joint. Checks for joint
+   *        type first. Sets command to limit if out of bounds.
+   * \param command - the input to test
+   */
+  void enforceJointLimits(double &command);
+
+}; // class
 
 } // namespace
 

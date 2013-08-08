@@ -183,9 +183,13 @@ void JointPositionController::update(const ros::Time& time, const ros::Duration&
   {
     error = angles::shortest_angular_distance(current_position, command_position);
   }
-  else //prismatic
+  else if (joint_urdf_->type == urdf::Joint::PRISMATIC)
   {
     error = command_position - current_position;
+  }
+  else
+  {
+    ROS_ERROR_STREAM_NAMED("update","Unknown joint type " << joint_urdf_->type);
   }
 
   // Compute velocity error. By default we assume desired velocity is 0 (velocity is not required)

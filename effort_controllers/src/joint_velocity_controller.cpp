@@ -34,14 +34,19 @@
  *********************************************************************/
 
 #include <effort_controllers/joint_velocity_controller.h>
+#include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
 
 
 namespace effort_controllers {
 
 JointVelocityController::JointVelocityController()
-: command_(0), loop_count_(0)
-{}
+  : command_(0), 
+    loop_count_(0),
+    in_position_mode_(false)
+{
+  ROS_DEBUG_STREAM_NAMED("temp","constructor");
+}
 
 JointVelocityController::~JointVelocityController()
 {
@@ -61,16 +66,36 @@ bool JointVelocityController::init(hardware_interface::EffortJointInterface *rob
 
 bool JointVelocityController::init(hardware_interface::EffortJointInterface *robot, ros::NodeHandle &n)
 {
+  ROS_DEBUG_STREAM_NAMED("temp","here0");
+  return true;
+
   // Get joint name from parameter server
   std::string joint_name;
   if (!n.getParam("joint", joint_name)) {
     ROS_ERROR("No joint given (namespace: %s)", n.getNamespace().c_str());
     return false;
   }
+  ROS_DEBUG_STREAM_NAMED("temp","here1");
 
   // Get joint handle from hardware interface
   joint_ = robot->getHandle(joint_name);
 
+  ROS_DEBUG_STREAM_NAMED("temp","here2");
+  // Get URDF info about joint
+  urdf::Model urdf;
+  if (!urdf.initParam("robot_description"))
+  {
+    ROS_ERROR("Failed to parse urdf file");
+    return false;
+  }
+  ROS_DEBUG_STREAM_NAMED("temp","here3 " << joint_name);
+  joint_urdf_ = urdf.getJoint(joint_name);
+  if (!joint_urdf_)
+  {
+    ROS_ERROR("Could not find joint '%s' in urdf", joint_name.c_str());
+    return false;
+  }
+  ROS_DEBUG_STREAM_NAMED("temp","here4");
   // Load PID Controller using gains set on parameter server
   if (!pid_controller_.init(ros::NodeHandle(n, "pid")))
     return false;
@@ -128,12 +153,81 @@ void JointVelocityController::starting(const ros::Time& time)
 
 void JointVelocityController::update(const ros::Time& time, const ros::Duration& period)
 {
-  double error = command_ - joint_.getVelocity();
+  double error, vel_error;
+  double commanded_effort;
 
-  // Set the PID error and compute the PID command with nonuniform time
-  // step size. The derivative error is computed from the change in the error
-  // and the timestep dt.
-  double commanded_effort = pid_controller_.computeCommand(error, period);
+  ROS_INFO_STREAM_NAMED("update","here1");
+  // If the velocity command is zero, assume we want to maintain position
+  if( command_ == 0 )
+  {
+ROS_INFO_STREAM_NAMED("update","here2");
+    if( in_position_mode_ == false )
+    {
+ROS_INFO_STREAM_NAMED("update","here3");
+      // Remember the current position so that we can maintain it in the future
+      position_mode_command_ = joint_.getPosition();
+      in_position_mode_ = true;
+      ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller to position mode with position setpoint " << position_mode_command_);
+    }
+  }
+  else if( in_position_mode_ == true ) 
+  {
+ROS_INFO_STREAM_NAMED("update","here4");
+    // switch back to velocity mode
+    in_position_mode_ = false;
+    ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller back to velocity mode");
+  }
+  
+ROS_INFO_STREAM_NAMED("update","here5");
+  // Send position command if appropriate
+  if( in_position_mode_ )
+  {
+    double current_position = joint_.getPosition();
+
+  ROS_DEBUG_STREAM_NAMED("temp","update enforce");
+    // Make sure joint is within limits if applicable
+    enforceJointLimits(position_mode_command_);
+
+  ROS_DEBUG_STREAM_NAMED("temp","update pos error");
+    // Compute position error
+    if (joint_urdf_->type == urdf::Joint::REVOLUTE)
+    {
+      angles::shortest_angular_distance_with_limits(
+        current_position,
+        position_mode_command_,
+        joint_urdf_->limits->lower,
+        joint_urdf_->limits->upper,
+        error);
+    }
+    else if (joint_urdf_->type == urdf::Joint::CONTINUOUS)
+    {
+      error = angles::shortest_angular_distance(current_position, position_mode_command_);
+    }
+    else if (joint_urdf_->type == urdf::Joint::PRISMATIC)
+    {
+      error = position_mode_command_ - current_position;
+    }
+    else
+    {
+      ROS_ERROR_STREAM_NAMED("update","Unknown joint type " << joint_urdf_->type);
+    }
+
+    // Compute velocity error. By default we assume desired velocity is 0 (velocity is not required)
+    vel_error = 0 - joint_.getVelocity();
+
+    // Set the PID error and compute the PID command with nonuniform
+    // time step size. This also allows the user to pass in a precomputed derivative error.
+    commanded_effort = pid_controller_.computeCommand(error, vel_error, period);    
+  }
+  else // in velocity mode
+  {
+    error = command_ - joint_.getVelocity();
+
+    // Set the PID error and compute the PID command with nonuniform time
+    // step size. The derivative error is computed from the change in the error
+    // and the timestep dt.
+    commanded_effort = pid_controller_.computeCommand(error, period);
+  }
 
   joint_.setCommand(commanded_effort);
 
@@ -165,6 +259,24 @@ void JointVelocityController::setCommandCB(const std_msgs::Float64ConstPtr& msg)
   command_ = msg->data;
 }
 
+// Note: we may want to remove this function once issue https://github.com/ros/angles/issues/2 is resolved
+void JointVelocityController::enforceJointLimits(double &command)
+{
+  // Check that this joint has applicable limits
+  if (joint_urdf_->type == urdf::Joint::REVOLUTE || joint_urdf_->type == urdf::Joint::PRISMATIC)
+  {
+    if( command > joint_urdf_->limits->upper ) // above upper limnit
+    {
+      command = joint_urdf_->limits->upper;
+    }
+    else if( command < joint_urdf_->limits->lower ) // below lower limit
+    {
+      command = joint_urdf_->limits->lower;
+    }
+  }
+}
+
 } // namespace
+
 
 PLUGINLIB_EXPORT_CLASS( effort_controllers::JointVelocityController, controller_interface::ControllerBase)
