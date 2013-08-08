@@ -44,9 +44,7 @@ JointVelocityController::JointVelocityController()
   : command_(0),
     loop_count_(0),
     in_position_mode_(false)
-{
-  ROS_DEBUG_STREAM_NAMED("temp","constructor");
-}
+{}
 
 JointVelocityController::~JointVelocityController()
 {
@@ -66,21 +64,16 @@ bool JointVelocityController::init(hardware_interface::EffortJointInterface *rob
 
 bool JointVelocityController::init(hardware_interface::EffortJointInterface *robot, ros::NodeHandle &n)
 {
-  ROS_DEBUG_STREAM_NAMED("temp","here0");
-  return true;
-
   // Get joint name from parameter server
   std::string joint_name;
   if (!n.getParam("joint", joint_name)) {
     ROS_ERROR("No joint given (namespace: %s)", n.getNamespace().c_str());
     return false;
   }
-  ROS_DEBUG_STREAM_NAMED("temp","here1");
 
   // Get joint handle from hardware interface
   joint_ = robot->getHandle(joint_name);
 
-  ROS_DEBUG_STREAM_NAMED("temp","here2");
   // Get URDF info about joint
   urdf::Model urdf;
   if (!urdf.initParam("robot_description"))
@@ -88,14 +81,13 @@ bool JointVelocityController::init(hardware_interface::EffortJointInterface *rob
     ROS_ERROR("Failed to parse urdf file");
     return false;
   }
-  ROS_DEBUG_STREAM_NAMED("temp","here3 " << joint_name);
   joint_urdf_ = urdf.getJoint(joint_name);
   if (!joint_urdf_)
   {
     ROS_ERROR("Could not find joint '%s' in urdf", joint_name.c_str());
     return false;
   }
-  ROS_DEBUG_STREAM_NAMED("temp","here4");
+
   // Load PID Controller using gains set on parameter server
   if (!pid_controller_.init(ros::NodeHandle(n, "pid")))
     return false;
@@ -156,39 +148,33 @@ void JointVelocityController::update(const ros::Time& time, const ros::Duration&
   double error, vel_error;
   double commanded_effort;
 
-  ROS_INFO_STREAM_NAMED("update","here1");
   // If the velocity command is zero, assume we want to maintain position
   if( command_ == 0 )
   {
-ROS_INFO_STREAM_NAMED("update","here2");
     if( in_position_mode_ == false )
     {
-ROS_INFO_STREAM_NAMED("update","here3");
       // Remember the current position so that we can maintain it in the future
       position_mode_command_ = joint_.getPosition();
       in_position_mode_ = true;
-      ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller to position mode with position setpoint " << position_mode_command_);
+      //ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller to position mode with setpoint " 
+      //  << position_mode_command_);
     }
   }
   else if( in_position_mode_ == true )
   {
-ROS_INFO_STREAM_NAMED("update","here4");
     // switch back to velocity mode
     in_position_mode_ = false;
-    ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller back to velocity mode");
+    //ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller back to velocity mode");
   }
 
-ROS_INFO_STREAM_NAMED("update","here5");
   // Send position command if appropriate
   if( in_position_mode_ )
   {
     double current_position = joint_.getPosition();
 
-  ROS_DEBUG_STREAM_NAMED("temp","update enforce");
     // Make sure joint is within limits if applicable
     enforceJointLimits(position_mode_command_);
 
-  ROS_DEBUG_STREAM_NAMED("temp","update pos error");
     // Compute position error
     if (joint_urdf_->type == urdf::Joint::REVOLUTE)
     {
