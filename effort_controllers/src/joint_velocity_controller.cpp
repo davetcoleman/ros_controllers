@@ -41,7 +41,7 @@
 namespace effort_controllers {
 
 JointVelocityController::JointVelocityController()
-  : command_(0), 
+  : command_(0),
     loop_count_(0),
     in_position_mode_(false)
 {
@@ -170,14 +170,14 @@ ROS_INFO_STREAM_NAMED("update","here3");
       ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller to position mode with position setpoint " << position_mode_command_);
     }
   }
-  else if( in_position_mode_ == true ) 
+  else if( in_position_mode_ == true )
   {
 ROS_INFO_STREAM_NAMED("update","here4");
     // switch back to velocity mode
     in_position_mode_ = false;
     ROS_DEBUG_STREAM_NAMED("update","Switching velocity controller back to velocity mode");
   }
-  
+
 ROS_INFO_STREAM_NAMED("update","here5");
   // Send position command if appropriate
   if( in_position_mode_ )
