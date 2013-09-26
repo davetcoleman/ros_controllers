@@ -9,7 +9,7 @@
 //   * Redistributions in binary form must reproduce the above copyright
 //     notice, this list of conditions and the following disclaimer in the
 //     documentation and/or other materials provided with the distribution.
-//   * Neither the name of hiDOF, Inc. nor the names of its
+//   * Neither the name of PAL Robotics S.L. nor the names of its
 //     contributors may be used to endorse or promote products derived from
 //     this software without specific prior written permission.
 //
@@ -79,17 +79,22 @@ std::vector<std::string> getStrings(const ros::NodeHandle& nh, const std::string
 boost::shared_ptr<urdf::Model> getUrdf(const ros::NodeHandle& nh, const std::string& param_name)
 {
   boost::shared_ptr<urdf::Model> urdf(new urdf::Model);
+
   std::string urdf_str;
-  if (!nh.getParam(param_name, urdf_str))
+  // Check for robot_description in proper namespace
+  if (nh.getParam(param_name, urdf_str))
   {
-    ROS_ERROR_STREAM("Could not find '" << param_name << "' parameter (namespace: " <<
-                     nh.getNamespace() << ").");
-    return boost::shared_ptr<urdf::Model>();
+    if (!urdf->initString(urdf_str))
+    {
+      ROS_ERROR_STREAM("Failed to parse URDF contained in '" << param_name << "' parameter (namespace: " <<
+        nh.getNamespace() << ").");
+      return boost::shared_ptr<urdf::Model>();
+    }
   }
-  if (!urdf->initString(urdf_str))
+  // Check for robot_description in root
+  else if (!urdf->initParam("robot_description"))
   {
-    ROS_ERROR_STREAM("Failed to parse URDF contained in '" << param_name << "' parameter (namespace: " <<
-                     nh.getNamespace() << ").");
+    ROS_ERROR_STREAM("Failed to parse URDF contained in '" << param_name << "' parameter");
     return boost::shared_ptr<urdf::Model>();
   }
   return urdf;
@@ -184,6 +189,7 @@ checkPathTolerances(const typename Segment::State& state_error,
   const SegmentTolerances<Scalar>& tolerances = segment.getTolerances();
   if (!checkStateTolerance(state_error, tolerances.state_tolerance))
   {
+    ROS_ERROR_STREAM_NAMED(name_,"Path state tolerances failed.");
     rt_active_goal_->preallocated_result_->error_code = control_msgs::FollowJointTrajectoryResult::PATH_TOLERANCE_VIOLATED;
     rt_active_goal_->setAborted(rt_active_goal_->preallocated_result_);
     rt_active_goal_.reset();
@@ -216,6 +222,7 @@ checkGoalTolerances(const typename Segment::State& state_error,
   }
   else
   {
+    ROS_ERROR_STREAM_NAMED(name_,"Goal tolerances failed");
     rt_active_goal_->preallocated_result_->error_code = control_msgs::FollowJointTrajectoryResult::GOAL_TOLERANCE_VIOLATED;
     rt_active_goal_->setAborted(rt_active_goal_->preallocated_result_);
     rt_active_goal_.reset();
@@ -231,7 +238,7 @@ JointTrajectoryController()
 
 template <class SegmentImpl, class HardwareInterface>
 bool JointTrajectoryController<SegmentImpl, HardwareInterface>::
-init(hardware_interface::PositionJointInterface* hw,
+init(HardwareInterface* hw,
      ros::NodeHandle&                            root_nh,
      ros::NodeHandle&                            controller_nh)
 {
@@ -296,10 +303,10 @@ init(hardware_interface::PositionJointInterface* hw,
   }
 
   assert(joints_.size() == angle_wraparound_.size());
-  ROS_INFO_STREAM_NAMED(name_, "Initialized controller '" << name_ << "' with:" <<
-                        "\n- Number of joints: " << joints_.size() <<
-                        "\n- Hardware interface type: '" << this->getHardwareInterfaceType() << "'" <<
-                        "\n- Trajectory segment type: '" << hardware_interface::internal::demangledTypeName<SegmentImpl>() << "'");
+  ROS_DEBUG_STREAM_NAMED(name_, "Initialized controller '" << name_ << "' with:" <<
+                         "\n- Number of joints: " << joints_.size() <<
+                         "\n- Hardware interface type: '" << this->getHardwareInterfaceType() << "'" <<
+                         "\n- Trajectory segment type: '" << hardware_interface::internal::demangledTypeName<SegmentImpl>() << "'");
 
   // Default tolerances
   ros::NodeHandle tol_nh(controller_nh_, "constraints");
@@ -356,6 +363,7 @@ template <class SegmentImpl, class HardwareInterface>
 void JointTrajectoryController<SegmentImpl, HardwareInterface>::
 update(const ros::Time& time, const ros::Duration& period)
 {
+
   // Updated time data
   TimeData time_data;
   time_data.time   = time;                                     // Cache current time
@@ -381,8 +389,8 @@ update(const ros::Time& time, const ros::Duration& period)
     current_state_.velocity[i] = joints_[i].getVelocity();
     // There's no acceleration data available in a joint handle
 
-    state_error_.position[i] = current_state_.position[i] - desired_state_.position[i];
-    state_error_.velocity[i] = current_state_.velocity[i] - desired_state_.velocity[i];
+    state_error_.position[i] = desired_state_.position[i] - current_state_.position[i];
+    state_error_.velocity[i] = desired_state_.velocity[i] - current_state_.velocity[i];
     state_error_.acceleration[i] = 0.0;
   }
 
@@ -399,6 +407,7 @@ update(const ros::Time& time, const ros::Duration& period)
     }
     else if (segment_it == --curr_traj.end())
     {
+      ROS_DEBUG_STREAM_NAMED(name_,"Finished executing last segement, checking goal tolerances");
       // Finished executing the LAST segment: check goal tolerances
       checkGoalTolerances(state_error_,
                            *segment_it);
@@ -492,6 +501,8 @@ template <class SegmentImpl, class HardwareInterface>
 void JointTrajectoryController<SegmentImpl, HardwareInterface>::
 goalCB(GoalHandle gh)
 {
+  ROS_DEBUG_STREAM_NAMED(name_,"Recieved new action goal");
+
   // Precondition: Running controller
   if (!this->isRunning())
   {
