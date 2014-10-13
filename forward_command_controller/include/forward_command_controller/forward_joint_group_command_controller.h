@@ -75,15 +75,49 @@ public:
   ForwardJointGroupCommandController() { commands_.clear(); }
   ~ForwardJointGroupCommandController() {sub_command_.shutdown();}
 
+
+  /**
+   * \brief Temporary function since this function is not available in Groovy
+   */
+  bool getParam(ros::NodeHandle &n, const std::string& key, std::vector<std::string>& vec)
+  {
+    XmlRpc::XmlRpcValue xml_array;
+    if(!n.getParam(key, xml_array)) {
+      return false;
+    }
+
+    // Make sure it's an array type
+    if(xml_array.getType() != XmlRpc::XmlRpcValue::TypeArray) {
+      return false;
+    }
+
+    // Resize the target vector (destructive)
+    vec.resize(xml_array.size());
+
+    // Fill the vector with stuff
+    for (int i = 0; i < xml_array.size(); i++) {
+      if (xml_array[i].getType() != XmlRpc::XmlRpcValue::TypeString) {
+        return false;
+      }
+
+      vec[i] = static_cast<std::string>(xml_array[i]);
+    }
+
+    return true;
+  }
+
   bool init(T* hw, ros::NodeHandle &n)
   {
     // List of controlled joints
     std::string param_name = "joints";
-    if(!n.getParam(param_name, joint_names_))
+
+    if(!getParam(n, param_name, joint_names_))
     {
       ROS_ERROR_STREAM("Failed to getParam '" << param_name << "' (namespace: " << n.getNamespace() << ").");
       return false;
     }
+
+    ROS_ERROR_STREAM("Failed to getParam '" << param_name << "' (namespace: " << n.getNamespace() << ").");
     n_joints_ = joint_names_.size();
     
     for(unsigned int i=0; i<n_joints_; i++)
