@@ -658,8 +658,11 @@ publishState(const ros::Time& time)
       state_publisher_->msg_.desired.accelerations = desired_state_.acceleration;
       state_publisher_->msg_.actual.positions      = current_state_.position;
       state_publisher_->msg_.actual.velocities     = current_state_.velocity;
+
+      // DTC hack, use error to publish the PID command
       state_publisher_->msg_.error.positions       = state_error_.position;
-      state_publisher_->msg_.error.velocities      = state_error_.velocity;
+      for (std::size_t i = 0; i < joints_.size(); ++i)
+        state_publisher_->msg_.error.velocities[i] = joints_[i].getCommand();        
 
       state_publisher_->unlockAndPublish();
     }
