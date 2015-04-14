@@ -277,7 +277,7 @@ Trajectory initJointTrajectory(const trajectory_msgs::JointTrajectory&       msg
     else
     {
       ros::Duration next_point_dur = msg_start_time + it->time_from_start - time;
-      ROS_WARN_STREAM("Dropping first " << std::distance(msg.points.begin(), it) <<
+      ROS_INFO_STREAM("Dropping first " << std::distance(msg.points.begin(), it) <<
                       " trajectory point(s) out of " << msg.points.size() <<
                       ", as they occur before the current time.\n" <<
                       "First valid point will be reached in " << std::fixed << std::setprecision(3) <<
